@@ -298,6 +298,41 @@
       font-size: 0.9rem;
     }
     
+    .findings-filter {
+      margin: 10px 0;
+      padding: 8px 10px;
+      background: #0f0f23;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      flex-wrap: wrap;
+    }
+    
+    .findings-filter .filter-label {
+      color: #888;
+      font-size: 0.8rem;
+    }
+    
+    .findings-filter label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    
+    .filter-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    
+    .filter-dot.high { background: #ff6b6b; }
+    .filter-dot.medium { background: #ffd93d; }
+    .filter-dot.low { background: #00d4ff; }
+    .filter-dot.sensitive { background: #9d4edd; }
+    
     .findings-list {
       margin-top: 10px;
       max-height: 300px;
@@ -406,6 +441,13 @@
     
     <details class="findings-panel" id="findings-panel">
       <summary>📋 Quick View: Lines with findings (<span id="findings-line-count">0</span> lines)</summary>
+      <div class="findings-filter">
+        <span class="filter-label">Show:</span>
+        <label><input type="checkbox" id="filter-high" checked onchange="updateFindingsFilter()"> <span class="filter-dot high"></span> High</label>
+        <label><input type="checkbox" id="filter-medium" checked onchange="updateFindingsFilter()"> <span class="filter-dot medium"></span> Likely</label>
+        <label><input type="checkbox" id="filter-low" checked onchange="updateFindingsFilter()"> <span class="filter-dot low"></span> Possible</label>
+        <label><input type="checkbox" id="filter-sensitive" checked onchange="updateFindingsFilter()"> <span class="filter-dot sensitive"></span> Sensitive</label>
+      </div>
       <div class="findings-list" id="findings-list"></div>
     </details>
     
@@ -743,11 +785,55 @@ function updateFindingsList(input, matches) {
     charOffset = lineEnd + 1; // +1 for newline
   }
   
-  lineCount.textContent = linesWithFindings.size;
+  // Store for filtering
+  window.linesWithFindings = linesWithFindings;
+  
+  // Render with current filter
+  renderFindingsList()
+}
+
+function renderFindingsList() {
+  const linesWithFindings = window.linesWithFindings || new Map();
+  const findingsList = document.getElementById('findings-list');
+  const lineCount = document.getElementById('findings-line-count');
+  
+  // Get filter settings
+  const showHigh = document.getElementById('filter-high').checked;
+  const showMedium = document.getElementById('filter-medium').checked;
+  const showLow = document.getElementById('filter-low').checked;
+  const showSensitive = document.getElementById('filter-sensitive').checked;
+  
+  // Filter lines based on settings
+  const filteredLines = new Map();
+  for (const [lineNum, data] of linesWithFindings) {
+    const hasRelevant = data.matches.some(m => 
+      (m.confidence === 'high' && showHigh) ||
+      (m.confidence === 'medium' && showMedium) ||
+      (m.confidence === 'low' && showLow) ||
+      (m.confidence === 'sensitive' && showSensitive)
+    );
+    if (hasRelevant) {
+      // Filter matches too
+      const filteredMatches = data.matches.filter(m =>
+        (m.confidence === 'high' && showHigh) ||
+        (m.confidence === 'medium' && showMedium) ||
+        (m.confidence === 'low' && showLow) ||
+        (m.confidence === 'sensitive' && showSensitive)
+      );
+      filteredLines.set(lineNum, { line: data.line, matches: filteredMatches });
+    }
+  }
+  
+  lineCount.textContent = filteredLines.size;
+  
+  if (!filteredLines.size) {
+    findingsList.innerHTML = '<div style="color: #666; padding: 10px;">No findings match filter</div>';
+    return;
+  }
   
   // Build findings HTML
   let html = '';
-  for (const [lineNum, data] of linesWithFindings) {
+  for (const [lineNum, data] of filteredLines) {
     // Determine highest confidence on this line
     const confidences = data.matches.map(m => m.confidence);
     let borderClass = 'has-sensitive';
@@ -772,6 +858,10 @@ function updateFindingsList(input, matches) {
   }
   
   findingsList.innerHTML = html;
+}
+
+function updateFindingsFilter() {
+  renderFindingsList();
 }
 
 function copyRedacted() {
