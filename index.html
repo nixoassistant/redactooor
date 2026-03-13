@@ -283,6 +283,60 @@
       font-size: 0.8rem;
       color: #8f8;
     }
+    
+    .findings-panel {
+      margin-top: 15px;
+      padding: 15px;
+      background: #16213e;
+      border-radius: 8px;
+      border: 1px solid #0f3460;
+    }
+    
+    .findings-panel summary {
+      cursor: pointer;
+      color: #00d4ff;
+      font-size: 0.9rem;
+    }
+    
+    .findings-list {
+      margin-top: 10px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    
+    .finding-line {
+      padding: 8px 10px;
+      margin: 4px 0;
+      background: #0f0f23;
+      border-radius: 4px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 12px;
+      border-left: 3px solid #333;
+    }
+    
+    .finding-line.has-high { border-left-color: #ff6b6b; }
+    .finding-line.has-medium { border-left-color: #ffd93d; }
+    .finding-line.has-low { border-left-color: #00d4ff; }
+    .finding-line.has-sensitive { border-left-color: #9d4edd; }
+    
+    .finding-line-num {
+      color: #666;
+      margin-right: 10px;
+      user-select: none;
+    }
+    
+    .finding-type {
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-left: 8px;
+      float: right;
+    }
+    
+    .finding-type.high { background: #ff6b6b30; color: #ff6b6b; }
+    .finding-type.medium { background: #ffd93d30; color: #ffd93d; }
+    .finding-type.low { background: #00d4ff30; color: #00d4ff; }
+    .finding-type.sensitive { background: #9d4edd30; color: #9d4edd; }
   </style>
 </head>
 <body>
@@ -349,6 +403,11 @@
         <span class="stat-value info" id="stat-sensitive">0</span>
       </div>
     </div>
+    
+    <details class="findings-panel" id="findings-panel">
+      <summary>📋 Quick View: Lines with findings (<span id="findings-line-count">0</span> lines)</summary>
+      <div class="findings-list" id="findings-list"></div>
+    </details>
     
     <details class="settings" open>
       <summary>⚙️ Detection Settings</summary>
@@ -458,8 +517,9 @@ const patterns = {
   ],
   
   secretnames: [
-    { regex: /\b[A-Z][A-Z0-9_]{2,}_(KEY|TOKEN|SECRET|PASS|PASSWORD|API|AUTH|CREDENTIAL)S?\b/g, name: 'Secret Variable Name', confidence: 'sensitive' },
-    { regex: /\b(API_KEY|SECRET_KEY|AUTH_TOKEN|ACCESS_TOKEN|PRIVATE_KEY|CLIENT_SECRET|CLIENT_ID)\b/gi, name: 'Secret Variable Name', confidence: 'sensitive' },
+    // Only match when these appear as standalone assignments like "API_KEY=" or "API_KEY:"
+    // NOT when they're part of a larger string
+    { regex: /(?<![A-Za-z0-9_])(API_KEY|SECRET_KEY|AUTH_TOKEN|ACCESS_TOKEN|PRIVATE_KEY|CLIENT_SECRET|DATABASE_URL|DB_PASSWORD)(?![A-Za-z0-9_])\s*[=:]/gi, name: 'Secret Variable Assignment', confidence: 'sensitive' },
   ],
   
   emails: [
@@ -628,6 +688,9 @@ function analyze() {
   
   // Store matches for copy function
   window.currentMatches = filtered;
+  
+  // Update findings quick view
+  updateFindingsList(input, filtered);
 }
 
 function escapeHtml(str) {
@@ -645,6 +708,70 @@ function updateStats(total, high, medium, low, sensitive) {
   document.getElementById('stat-medium').textContent = medium;
   document.getElementById('stat-low').textContent = low;
   document.getElementById('stat-sensitive').textContent = sensitive;
+}
+
+function updateFindingsList(input, matches) {
+  const findingsList = document.getElementById('findings-list');
+  const lineCount = document.getElementById('findings-line-count');
+  
+  if (!matches.length) {
+    findingsList.innerHTML = '<div style="color: #666; padding: 10px;">No findings</div>';
+    lineCount.textContent = '0';
+    return;
+  }
+  
+  // Split input into lines and find which lines have matches
+  const lines = input.split('\n');
+  const linesWithFindings = new Map(); // lineNum -> {line, matches}
+  
+  let charOffset = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const lineStart = charOffset;
+    const lineEnd = charOffset + lines[i].length;
+    
+    const lineMatches = matches.filter(m => 
+      m.index >= lineStart && m.index < lineEnd
+    );
+    
+    if (lineMatches.length > 0) {
+      linesWithFindings.set(i + 1, {
+        line: lines[i],
+        matches: lineMatches
+      });
+    }
+    
+    charOffset = lineEnd + 1; // +1 for newline
+  }
+  
+  lineCount.textContent = linesWithFindings.size;
+  
+  // Build findings HTML
+  let html = '';
+  for (const [lineNum, data] of linesWithFindings) {
+    // Determine highest confidence on this line
+    const confidences = data.matches.map(m => m.confidence);
+    let borderClass = 'has-sensitive';
+    if (confidences.includes('high')) borderClass = 'has-high';
+    else if (confidences.includes('medium')) borderClass = 'has-medium';
+    else if (confidences.includes('low')) borderClass = 'has-low';
+    
+    // Get unique finding types
+    const types = [...new Set(data.matches.map(m => m.name))];
+    const typeLabels = types.map(t => {
+      const conf = data.matches.find(m => m.name === t).confidence;
+      return `<span class="finding-type ${conf}">${t}</span>`;
+    }).join('');
+    
+    const truncatedLine = data.line.length > 120 
+      ? data.line.substring(0, 120) + '...' 
+      : data.line;
+    
+    html += `<div class="finding-line ${borderClass}">
+      <span class="finding-line-num">L${lineNum}</span>${escapeHtml(truncatedLine)}${typeLabels}
+    </div>`;
+  }
+  
+  findingsList.innerHTML = html;
 }
 
 function copyRedacted() {
