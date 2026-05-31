@@ -509,6 +509,7 @@ const patterns = {
     { regex: /\bAIza[0-9A-Za-z-_]{35}\b/g, name: 'Google API Key', confidence: 'high' },
     { regex: /\b(?:r|s)k_(test|live)_[0-9a-zA-Z]{24}\b/g, name: 'Stripe Key', confidence: 'high' },
     { regex: /\bfw_[a-zA-Z0-9]{24}\b/g, name: 'Fireworks API Key', confidence: 'high' },
+    { regex: /[A-Za-z0-9_-]*client[_-]?secret[\s]*[=:]["']?\s*[A-Za-z0-9_-]{16,}["']?/gi, name: 'OAuth Client Secret', confidence: 'high' },
   ],
   
   privatekeys: [
